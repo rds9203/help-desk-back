@@ -87,22 +87,19 @@ async function getPayments(context: Context, req: HttpRequest): Promise<void> {
 }
 
 async function createPayment(context: Context, req: HttpRequest): Promise<void> {
-  const { 
-    userId, 
-    creditId, 
-    installmentNumber, 
-    amount 
-  } = req.body;
+  const { userId, creditId, installmentNumber } = req.body;
   
-  if (!userId || !creditId || !installmentNumber || !amount) {
+  if (!userId || !creditId || !installmentNumber) {
     context.res = createResponse(400, { error: 'Faltan campos requeridos' });
     return;
   }
   
-  // Obtener información del crédito
   const credit = await prisma.credit.findUnique({
     where: { id: parseInt(creditId) },
-    include: { interestRate: true }
+    include: {
+      interestRate: true,
+      payments: true
+    }
   });
   
   if (!credit) {
@@ -110,28 +107,31 @@ async function createPayment(context: Context, req: HttpRequest): Promise<void> 
     return;
   }
   
-  // Calcular componentes del pago
-  const monthlyRate = parseFloat(credit.interestRate.rate.toString()) / 100 / 12;
-  const interestAmount = parseFloat(credit.outstandingAmount.toString()) * monthlyRate;
-  const principalAmount = parseFloat(amount) - interestAmount;
-  const remainingBalance = parseFloat(credit.outstandingAmount.toString()) - principalAmount;
+  const nextInstallment = credit.paidInstallments + 1;
+  if (parseInt(installmentNumber) !== nextInstallment) {
+    context.res = createResponse(400, { error: `La próxima cuota a pagar es la número ${nextInstallment}` });
+    return;
+  }
   
-  // Calcular fecha de vencimiento (próximo mes)
-  const dueDate = new Date();
-  dueDate.setMonth(dueDate.getMonth() + parseInt(installmentNumber));
+  const monthlyRate = 0.01;
+  const outstanding = Number(credit.outstandingAmount);
+  const interestAmount = +(outstanding * monthlyRate).toFixed(2);
+  let principalAmount = credit.installmentAmount - interestAmount;
+  if (principalAmount < 0) principalAmount = 0;
+  if (principalAmount > outstanding) principalAmount = outstanding;
+  const amount = +(principalAmount + interestAmount).toFixed(2);
+  const remainingBalance = Math.max(0, +(outstanding - principalAmount).toFixed(2));
   
-  // Crear el pago
   const payment = await prisma.paymentHistory.create({
     data: {
       userId: parseInt(userId),
       creditId: parseInt(creditId),
       installmentNumber: parseInt(installmentNumber),
-      amount: parseFloat(amount),
+      amount,
       interestAmount,
       principalAmount,
-      remainingBalance: Math.max(0, remainingBalance),
+      remainingBalance,
       paymentDate: new Date(),
-      dueDate,
       status: 'PAGADO'
     },
     include: {
@@ -140,23 +140,22 @@ async function createPayment(context: Context, req: HttpRequest): Promise<void> 
     }
   });
   
-  // Actualizar el crédito
   const updatedCredit = await prisma.credit.update({
     where: { id: parseInt(creditId) },
     data: {
-      outstandingAmount: Math.max(0, remainingBalance),
-      pendingInstallments: Math.max(0, credit.pendingInstallments - 1),
+      outstandingAmount: remainingBalance,
+      paidInstallments: credit.paidInstallments + 1,
       status: remainingBalance <= 0 ? 'PAGADO' : 'ACTIVO'
     }
   });
   
-  // Si el crédito está pagado, actualizar estado de deuda del usuario
-  if (remainingBalance <= 0) {
-    await prisma.user.update({
-      where: { id: parseInt(userId) },
-      data: { hasDebt: false }
-    });
-  }
+  await prisma.user.update({
+    where: { id: parseInt(userId) },
+    data: {
+      hasDebt: remainingBalance > 0,
+      debtAmount: remainingBalance
+    }
+  });
   
   context.res = createResponse(201, { payment, credit: updatedCredit });
 }
@@ -172,11 +171,7 @@ async function updatePayment(context: Context, req: HttpRequest): Promise<void> 
   
   const payment = await prisma.paymentHistory.update({
     where: { id: parseInt(id) },
-    data: {
-      ...updateData,
-      paymentDate: updateData.paymentDate ? new Date(updateData.paymentDate) : undefined,
-      dueDate: updateData.dueDate ? new Date(updateData.dueDate) : undefined
-    },
+    data: updateData,
     include: {
       user: true,
       credit: true

@@ -1,116 +1,205 @@
-import { PrismaClient } from '../generated/prisma';
+import { PrismaClient } from '../generated/prisma/index.js';
+import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
 async function main() {
   console.log('🌱 Iniciando seed de la base de datos...');
 
-  // Crear roles
-  const adminRole = await prisma.role.upsert({
-    where: { name: 'admin' },
-    update: {},
-    create: {
-      name: 'admin',
-      description: 'Administrador del sistema'
-    }
-  });
-
-  const userRole = await prisma.role.upsert({
-    where: { name: 'user' },
-    update: {},
-    create: {
-      name: 'user',
-      description: 'Usuario regular'
-    }
-  });
-
-  console.log('✅ Roles creados');
-
-  // Crear tasas de interés
-  const interestRates = [
-    {
-      name: 'Nuevo empleado (0-6 meses)',
-      minMonths: 0,
-      maxMonths: 6,
-      rate: 18.0
-    },
-    {
-      name: 'Empleado 6-12 meses',
-      minMonths: 6,
-      maxMonths: 12,
-      rate: 15.0
-    },
-    {
-      name: 'Empleado 1-2 años',
-      minMonths: 12,
-      maxMonths: 24,
-      rate: 12.0
-    },
-    {
-      name: 'Empleado 2-5 años',
-      minMonths: 24,
-      maxMonths: 60,
-      rate: 10.0
-    },
-    {
-      name: 'Empleado veterano (5+ años)',
-      minMonths: 60,
-      maxMonths: null,
-      rate: 8.0
-    }
-  ];
-
-  for (const rate of interestRates) {
-    await prisma.interestRate.upsert({
-      where: { name: rate.name },
-      update: {},
-      create: rate
+  // Crear roles con permisos
+  const existingRoles = await prisma.role.findMany();
+  
+  let superAdminRole = existingRoles.find(r => r.name === 'superadmin');
+  if (!superAdminRole) {
+    superAdminRole = await prisma.role.create({
+      data: {
+        name: 'superadmin',
+        description: 'Super Administrador con todos los privilegios',
+        permissions: JSON.stringify(['*']) // Todos los permisos
+      }
     });
   }
 
-  console.log('✅ Tasas de interés creadas');
+  let adminRole = existingRoles.find(r => r.name === 'admin');
+  if (!adminRole) {
+    adminRole = await prisma.role.create({
+      data: {
+        name: 'admin',
+        description: 'Administrador del sistema',
+        permissions: JSON.stringify(['users.create', 'users.read', 'users.update', 'credits.read', 'credits.update', 'tickets.read', 'tickets.update', 'reservations.read', 'vacations.read', 'vacations.update'])
+      }
+    });
+  }
 
-  // Crear usuarios de prueba
-  const users = [
-    {
-      firstName: 'Admin',
-      lastName: 'Sistema',
-      email: 'admin@helpdesk.com',
-      password: 'admin123', // En producción, hashear
-      birthDate: new Date('1985-01-15'),
-      position: 'Administrador',
+  let technologyRole = existingRoles.find(r => r.name === 'technology');
+  if (!technologyRole) {
+    technologyRole = await prisma.role.create({
+      data: {
+        name: 'technology',
+        description: 'Soporte Tecnológico',
+        permissions: JSON.stringify(['tickets.read', 'tickets.update', 'tickets.create', 'reservations.read', 'reservations.create'])
+      }
+    });
+  }
+
+  let userRole = existingRoles.find(r => r.name === 'user');
+  if (!userRole) {
+    userRole = await prisma.role.create({
+      data: {
+        name: 'user',
+        description: 'Usuario regular',
+        permissions: JSON.stringify(['credits.read', 'tickets.create', 'reservations.read', 'reservations.create', 'vacations.read', 'vacations.create'])
+      }
+    });
+  }
+
+  console.log('✅ Roles creados');
+
+  // Hash de contraseña por defecto
+  const defaultPassword = await bcrypt.hash('123', 10);
+
+  // Crear superadmin principal
+  const superAdmin = await prisma.user.upsert({
+    where: { email: 'superadmin@sectorial.co' },
+    update: {},
+    create: {
+      firstName: 'Super',
+      lastName: 'Administrador',
+      email: 'superadmin@sectorial.co',
+      password: defaultPassword,
+      documentNumber: '1000000001',
+      birthDate: new Date('1980-01-01'),
+      position: 'Super Administrador',
       startDate: new Date('2020-01-01'),
-      roleId: adminRole.id
-    },
+      salary: 10000000,
+      hasDebt: false,
+      contractType: 'indefinido',
+      roleId: superAdminRole.id,
+      isActive: true,
+      emailVerified: true,
+      pendingActivation: false,
+      pendingApproval: false
+    }
+  });
+
+  console.log('✅ Super Administrador creado:', superAdmin.email);
+
+  // Crear superadmin adicional
+  const richardAdmin = await prisma.user.upsert({
+    where: { email: 'richy9.13@gmail.com' },
+    update: {},
+    create: {
+      firstName: 'Richard',
+      lastName: 'Administrador',
+      email: 'richy9.13@gmail.com',
+      password: defaultPassword,
+      documentNumber: '1000000002',
+      birthDate: new Date('1990-01-01'),
+      position: 'Super Administrador',
+      startDate: new Date('2024-01-01'),
+      salary: 10000000,
+      hasDebt: false,
+      contractType: 'indefinido',
+      roleId: superAdminRole.id,
+      mustChangePassword: true
+    }
+  });
+
+  console.log('✅ Super Administrador Richard creado:', richardAdmin.email);
+
+  // Crear usuarios de ejemplo
+  const users = [
+    // Usuario con deuda
     {
-      firstName: 'Juan',
-      lastName: 'Pérez',
-      email: 'juan.perez@helpdesk.com',
-      password: 'user123',
-      birthDate: new Date('1990-05-20'),
+      firstName: 'Pedro',
+      lastName: 'García',
+      email: 'pedro.garcia@sectorial.co',
+      password: defaultPassword,
+      documentNumber: '12345678',
+      birthDate: new Date('1990-05-15'),
       position: 'Desarrollador',
-      startDate: new Date('2023-03-01'),
-      roleId: userRole.id
+      startDate: new Date('2024-01-15'),
+      salary: 3500000,
+      hasDebt: true,
+      debtAmount: 5000000, // Debe 5 millones
+      paidAmount: 1500000, // Ha pagado 1.5 millones
+      installmentAmount: 250000, // Cuota de 250 mil
+      interestRate: 2.5, // Interés del 2.5%
+      contractType: 'indefinido',
+      roleId: userRole.id,
+      mustChangePassword: true
     },
+    // Usuario sin deuda
     {
       firstName: 'María',
-      lastName: 'García',
-      email: 'maria.garcia@helpdesk.com',
-      password: 'user123',
-      birthDate: new Date('1988-08-10'),
+      lastName: 'López',
+      email: 'maria.lopez@sectorial.co',
+      password: defaultPassword,
+      documentNumber: '87654321',
+      birthDate: new Date('1988-12-03'),
       position: 'Diseñadora',
       startDate: new Date('2022-06-15'),
-      roleId: userRole.id
+      salary: 4200000,
+      hasDebt: false,
+      contractType: 'fijo',
+      roleId: userRole.id,
+      mustChangePassword: true
     },
+    // Admin con deuda
     {
       firstName: 'Carlos',
-      lastName: 'Rodríguez',
-      email: 'carlos.rodriguez@helpdesk.com',
-      password: 'user123',
-      birthDate: new Date('1982-12-03'),
+      lastName: 'Martínez',
+      email: 'carlos.martinez@sectorial.co',
+      password: defaultPassword,
+      documentNumber: '11223344',
+      birthDate: new Date('1985-08-20'),
       position: 'Gerente',
-      startDate: new Date('2020-01-15'),
-      roleId: userRole.id
+      startDate: new Date('2022-01-15'),
+      salary: 6000000,
+      hasDebt: true,
+      debtAmount: 8000000, // Debe 8 millones
+      paidAmount: 2000000, // Ha pagado 2 millones
+      installmentAmount: 400000, // Cuota de 400 mil
+      interestRate: 3.0, // Interés del 3%
+      contractType: 'indefinido',
+      roleId: adminRole.id,
+      mustChangePassword: true
+    },
+    // Soporte técnico
+    {
+      firstName: 'Luis',
+      lastName: 'Rodríguez',
+      email: 'luis.rodriguez@sectorial.co',
+      password: defaultPassword,
+      documentNumber: '44332211',
+      birthDate: new Date('1975-07-14'),
+      position: 'Soporte Técnico',
+      startDate: new Date('2021-03-01'),
+      salary: 4500000,
+      hasDebt: false,
+      contractType: 'indefinido',
+      roleId: technologyRole.id,
+      mustChangePassword: true
+    },
+    // Usuario con deuda pequeña
+    {
+      firstName: 'Laura',
+      lastName: 'González',
+      email: 'laura.gonzalez@sectorial.co',
+      password: defaultPassword,
+      documentNumber: '22334455',
+      birthDate: new Date('1995-02-20'),
+      position: 'Desarrolladora Jr',
+      startDate: new Date('2024-10-01'),
+      salary: 2800000,
+      hasDebt: true,
+      debtAmount: 2000000, // Debe 2 millones
+      paidAmount: 500000, // Ha pagado 500 mil
+      installmentAmount: 150000, // Cuota de 150 mil
+      interestRate: 2.0, // Interés del 2%
+      contractType: 'practicas',
+      roleId: userRole.id,
+      mustChangePassword: true
     }
   ];
 
@@ -124,88 +213,64 @@ async function main() {
 
   console.log('✅ Usuarios creados');
 
-  // Obtener usuarios creados para crear créditos
-  const createdUsers = await prisma.user.findMany({
-    include: { role: true }
-  });
-
-  const adminUser = createdUsers.find(u => u.role.name === 'admin');
-  const regularUsers = createdUsers.filter(u => u.role.name === 'user');
-
-  // Crear algunos créditos de prueba
-  if (regularUsers.length > 0) {
-    const user1 = regularUsers[0];
-    const user2 = regularUsers[1] || regularUsers[0];
-
-    // Calcular meses en empresa para cada usuario
-    const user1Months = Math.floor(
-      (Date.now() - user1.startDate.getTime()) / (1000 * 60 * 60 * 24 * 30)
-    );
-    const user2Months = Math.floor(
-      (Date.now() - user2.startDate.getTime()) / (1000 * 60 * 60 * 24 * 30)
-    );
-
-    // Obtener tasas de interés apropiadas
-    const user1Rate = await prisma.interestRate.findFirst({
-      where: {
-        minMonths: { lte: user1Months },
-        OR: [
-          { maxMonths: { gte: user1Months } },
-          { maxMonths: null }
-        ]
-      }
-    });
-
-    const user2Rate = await prisma.interestRate.findFirst({
-      where: {
-        minMonths: { lte: user2Months },
-        OR: [
-          { maxMonths: { gte: user2Months } },
-          { maxMonths: null }
-        ]
-      }
-    });
-
-    if (user1Rate) {
-      await prisma.credit.create({
-        data: {
-          userId: user1.id,
-          creditType: 'Préstamo Personal',
-          loanAmount: 15000,
-          outstandingAmount: 12000,
-          installmentAmount: 1500,
-          totalInstallments: 12,
-          pendingInstallments: 8,
-          startDate: new Date('2024-01-01'),
-          endDate: new Date('2024-12-01'),
-          status: 'ACTIVO',
-          interestRateId: user1Rate.id
-        }
-      });
+  // Crear tasas de interés
+  const interestRates = [
+    {
+      name: 'Tasa Personal',
+      rate: 12.5
+    },
+    {
+      name: 'Tasa Vehículo',
+      rate: 15.0
     }
+  ];
 
-    if (user2Rate) {
-      await prisma.credit.create({
-        data: {
-          userId: user2.id,
-          creditType: 'Línea de Crédito Empresarial',
-          loanAmount: 50000,
-          outstandingAmount: 35000,
-          installmentAmount: 5000,
-          totalInstallments: 12,
-          pendingInstallments: 7,
-          startDate: new Date('2024-02-01'),
-          endDate: new Date('2025-01-01'),
-          status: 'ACTIVO',
-          interestRateId: user2Rate.id
-        }
-      });
-    }
-
-    console.log('✅ Créditos de prueba creados');
+  for (const rateData of interestRates) {
+    await prisma.interestRate.create({
+      data: rateData
+    });
   }
 
+  console.log('✅ Tasas de interés creadas');
+
+  // Secciones de recursos y vacaciones eliminadas - no existen en el esquema actual
+
+  // Sección de tickets eliminada - no existe en el esquema actual
+
+  // Crear notificaciones
+  const allUsers = await prisma.user.findMany();
+  const notifications = [
+    {
+      userId: allUsers[0]?.id,
+      title: 'Solicitud de crédito pendiente',
+      message: 'Tienes una solicitud de crédito pendiente de aprobación',
+      type: 'warning'
+    },
+    {
+      userId: allUsers[1]?.id,
+      title: 'Crédito aprobado',
+      message: 'Tu solicitud de crédito ha sido aprobada',
+      type: 'success'
+    },
+    {
+      userId: allUsers[4]?.id,
+      title: 'Nuevo ticket asignado',
+      message: 'Se te ha asignado un nuevo ticket de soporte',
+      type: 'info'
+    }
+  ].filter(n => n.userId); // Filtrar notificaciones con userId válido
+
+  for (const notificationData of notifications) {
+    await prisma.notification.create({
+      data: notificationData
+    });
+  }
+
+  console.log('✅ Notificaciones creadas');
+
   console.log('🎉 Seed completado exitosamente!');
+  console.log('📧 Super Admin: superadmin@sectorial.co');
+  console.log('🔑 Contraseña por defecto: 123');
 }
 
 main()
@@ -216,4 +281,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-

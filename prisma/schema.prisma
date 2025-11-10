@@ -1,118 +1,135 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
   output   = "../generated/prisma"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
-// Tabla de Roles
+// === ROLES ===
 model Role {
   id          Int      @id @default(autoincrement())
-  name        String   @unique // "admin", "user", "manager", etc.
+  name        String   @unique
   description String?
+  permissions String   @default("[]")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Relaciones
   users User[]
-
-  @@map("roles")
 }
 
-// Tabla de Usuarios
+// === USUARIOS ===
 model User {
   id                Int      @id @default(autoincrement())
   firstName         String
   lastName          String
   email             String   @unique
-  password          String   // Hash de la contraseña
-  birthDate         DateTime
-  position          String   // Cargo en la empresa
-  startDate         DateTime // Fecha de inicio en la compañía
+  password          String?
+  documentNumber    String?
+  birthDate         DateTime?
+  position          String?
+  startDate         DateTime?
+  salary            Float?
   hasDebt           Boolean  @default(false)
-  isActive          Boolean  @default(true)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  // Relaciones
+  debtAmount        Float?
+  paidAmount        Float?
+  installmentAmount Float?
+  interestRate      Float?
+  contractType      String?
   roleId            Int
-  role              Role     @relation(fields: [roleId], references: [id])
-  credits           Credit[]
-  paymentHistory    PaymentHistory[]
-
-  @@map("users")
-}
-
-// Tabla de Tipos de Interés
-model InterestRate {
-  id                Int      @id @default(autoincrement())
-  name              String   // "Nuevo empleado", "1-2 años", "3-5 años", etc.
-  minMonths         Int      // Meses mínimos en la empresa
-  maxMonths         Int?     // Meses máximos en la empresa (null = sin límite)
-  rate              Decimal  @db.Decimal(5, 2) // Tasa de interés (ej: 12.50)
+  mustChangePassword Boolean @default(true)
   isActive          Boolean  @default(true)
+  emailVerified     Boolean  @default(false)
+  pendingActivation Boolean @default(false)
+  pendingApproval   Boolean  @default(false)
+  approvedBy        Int?
+  approvedAt        DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  // Relaciones
-  credits           Credit[]
-
-  @@map("interest_rates")
+  role Role @relation(fields: [roleId], references: [id])
+  credits Credit[]
+  payments PaymentHistory[]
 }
 
-// Tabla de Créditos
+// === TASAS DE INTERÉS ===
+model InterestRate {
+  id         Int      @id @default(autoincrement())
+  name       String
+  rate       Float
+  minMonths  Int      @default(1)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  credits Credit[]
+}
+
+// === CRÉDITOS ===
 model Credit {
   id                Int      @id @default(autoincrement())
-  creditType        String   // "Préstamo Personal", "Línea de Crédito", etc.
-  loanAmount        Decimal  @db.Decimal(12, 2) // Monto del préstamo
-  outstandingAmount Decimal  @db.Decimal(12, 2) // Monto pendiente
-  installmentAmount Decimal  @db.Decimal(12, 2) // Cuota mensual
-  totalInstallments Int      // Total de cuotas
-  pendingInstallments Int    // Cuotas pendientes
+  userId            Int
+  creditType        String?
+  loanAmount        Float
+  installments      Int
+  installmentAmount Float
+  outstandingAmount Float
+  paidInstallments  Int      @default(0)
   startDate         DateTime
   endDate           DateTime
-  status            String   // "ACTIVO", "VENCIDO", "PAGADO", "CANCELADO"
+  status            String   @default("PENDIENTE_APROBACION")
+  interestRateId    Int
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  // Relaciones
-  userId            Int
-  user              User     @relation(fields: [userId], references: [id])
-  interestRateId    Int
-  interestRate      InterestRate @relation(fields: [interestRateId], references: [id])
-  paymentHistory    PaymentHistory[]
-
-  @@map("credits")
+  user         User         @relation(fields: [userId], references: [id])
+  interestRate InterestRate @relation(fields: [interestRateId], references: [id])
+  payments     PaymentHistory[]
 }
 
-// Tabla de Historial de Pagos
+// === HISTORIAL DE PAGOS ===
 model PaymentHistory {
-  id                Int      @id @default(autoincrement())
-  installmentNumber Int      // Número de cuota
-  amount            Decimal  @db.Decimal(12, 2) // Monto pagado
-  interestAmount    Decimal  @db.Decimal(12, 2) // Monto de interés
-  principalAmount   Decimal  @db.Decimal(12, 2) // Monto de capital
-  remainingBalance  Decimal  @db.Decimal(12, 2) // Saldo restante después del pago
-  paymentDate       DateTime
-  dueDate           DateTime // Fecha de vencimiento de la cuota
-  status            String   // "PAGADO", "VENCIDO", "PENDIENTE"
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id               Int      @id @default(autoincrement())
+  creditId         Int
+  userId           Int
+  installmentNumber Int
+  amount           Float
+  interestAmount   Float
+  principalAmount  Float
+  remainingBalance Float
+  paymentDate      DateTime
+  status           String   @default("PENDIENTE")
 
-  // Relaciones
-  userId            Int
-  user              User     @relation(fields: [userId], references: [id])
-  creditId          Int
-  credit            Credit   @relation(fields: [creditId], references: [id])
+  credit Credit @relation(fields: [creditId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+}
 
-  @@map("payment_history")
+// === NOTIFICACIONES ===
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  title     String
+  message   String
+  type      String   @default("info")
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// === LOGS DE AUDITORÍA ===
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int?
+  action     String
+  entityType String
+  entityId   Int?
+  oldValues  String?
+  newValues  String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
 }

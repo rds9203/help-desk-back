@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE `credit` ADD COLUMN `creditType` VARCHAR(191) NULL,
+    MODIFY `status` VARCHAR(191) NOT NULL DEFAULT 'PENDIENTE_APROBACION';
+
+-- AlterTable
+ALTER TABLE `user` ADD COLUMN `approvedAt` DATETIME(3) NULL,
+    ADD COLUMN `approvedBy` INTEGER NULL;

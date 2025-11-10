@@ -1,119 +1,271 @@
-# Help Desk Backend - Azure Functions + Prisma
+# Help Desk Backend
 
-Backend para el sistema de Help Desk construido con Azure Functions y Prisma ORM.
+Sistema de gestión de créditos y préstamos para empleados.
 
-## 🚀 Características
+## 📋 Descripción
 
-- **Azure Functions** para API serverless
-- **Prisma ORM** para manejo de base de datos
-- **PostgreSQL** como base de datos
-- **TypeScript** para tipado estático
-- **CORS** configurado para frontend
+Este es el backend del sistema Help Desk, construido con Node.js, Express y Prisma. Proporciona APIs RESTful para la gestión de usuarios, créditos, notificaciones y cálculos de préstamos.
 
-## 📋 Prerrequisitos
+## 🛠️ Tecnologías
 
-- Node.js 18+
-- PostgreSQL
-- Azure Functions Core Tools
-- Prisma CLI
+- **Node.js** - Runtime de JavaScript
+- **Express.js** - Framework web
+- **Prisma** - ORM para base de datos
+- **SQL Server** - Base de datos (configurada pero usando datos mockados)
+- **TypeScript** - Tipado estático
+- **CORS** - Manejo de CORS
 
-## 🛠️ Instalación
+## 📦 Instalación
 
-1. **Instalar dependencias:**
+### Prerrequisitos
+
+- Node.js (versión 18 o superior)
+- npm o yarn
+- SQL Server (opcional, actualmente usando datos mockados)
+
+### Pasos de instalación
+
+1. **Clonar el repositorio**
+   ```bash
+   git clone <url-del-repositorio>
+   cd help-desk-back
+   ```
+
+2. **Instalar dependencias**
+   ```bash
+   npm install
+   ```
+
+3. **Configurar variables de entorno** (opcional)
+   ```bash
+   # Crear archivo .env
+   cp env.example .env
+   ```
+   
+   Editar `.env` con tus configuraciones:
+   ```
+   # SQL Server local
+   DATABASE_URL="sqlserver://localhost:1433;database=helpdesk;user=sa;password=tu_password;encrypt=true;trustServerCertificate=true"
+   
+   # SQL Server Express
+   # DATABASE_URL="sqlserver://localhost\\SQLEXPRESS:1433;database=helpdesk;user=sa;password=tu_password;encrypt=true;trustServerCertificate=true"
+   
+   PORT=3001
+   ```
+
+4. **Configurar Prisma** (opcional)
+   ```bash
+   # Generar cliente de Prisma
+   npx prisma generate
+   
+   # Ejecutar migraciones (si usas base de datos real)
+   npx prisma migrate dev
+   
+   # Poblar base de datos con datos iniciales
+   npx prisma db seed
+   ```
+
+## 🚀 Ejecución
+
+### Desarrollo
 ```bash
-npm install
-```
-
-2. **Configurar base de datos:**
-```bash
-# Crear archivo .env con tu DATABASE_URL
-echo "DATABASE_URL=postgresql://username:password@localhost:5432/helpdesk_db?schema=public" > .env
-```
-
-3. **Generar cliente Prisma:**
-```bash
-npm run db:generate
-```
-
-4. **Ejecutar migraciones:**
-```bash
-npm run db:push
-```
-
-5. **Poblar base de datos con datos de prueba:**
-```bash
-npm run db:seed
-```
-
-## 🚀 Desarrollo
-
-```bash
-# Iniciar Azure Functions localmente
+# Iniciar servidor con nodemon (recarga automática)
 npm run dev
+
+# O iniciar servidor directamente
+npm start
 ```
 
-El servidor estará disponible en `http://localhost:7071`
+### Producción
+```bash
+# Compilar TypeScript
+npm run build
 
-## 📊 Estructura de la Base de Datos
+# Iniciar servidor de producción
+npm run start:prod
+```
 
-### Tablas Principales
+## 📊 Estructura del Proyecto
 
-- **roles**: Roles de usuario (admin, user, etc.)
-- **users**: Información de usuarios
-- **interest_rates**: Tasas de interés según tiempo en empresa
-- **credits**: Créditos de usuarios
-- **payment_history**: Historial de pagos
+```
+help-desk-back/
+├── prisma/
+│   ├── schema.prisma          # Esquema de base de datos
+│   └── migrations/            # Migraciones de BD
+├── scripts/
+│   └── seed.ts               # Script para poblar BD
+├── lib/
+│   ├── prisma.ts             # Configuración de Prisma
+│   └── utils.ts              # Utilidades
+├── functions/                # Azure Functions (no usado actualmente)
+├── server.js                 # Servidor principal
+├── package.json              # Dependencias y scripts
+└── README.md                 # Este archivo
+```
 
-### Lógica de Intereses
-
-El sistema calcula automáticamente la tasa de interés según el tiempo que el empleado lleva en la empresa:
-
-- **0-6 meses**: 18.0%
-- **6-12 meses**: 15.0%
-- **1-2 años**: 12.0%
-- **2-5 años**: 10.0%
-- **5+ años**: 8.0%
-
-## 🔗 Endpoints de API
+## 🔌 APIs Disponibles
 
 ### Usuarios
 - `GET /api/users` - Obtener todos los usuarios
-- `GET /api/users/{id}` - Obtener usuario específico
-- `POST /api/users` - Crear usuario
-- `PUT /api/users/{id}` - Actualizar usuario
-- `DELETE /api/users/{id}` - Eliminar usuario
+- `GET /api/users/:id` - Obtener usuario específico
+- `GET /api/users/:id/max-credit` - Calcular crédito máximo
 
 ### Créditos
 - `GET /api/credits` - Obtener todos los créditos
-- `GET /api/credits?userId={id}` - Obtener créditos de usuario
-- `GET /api/credits/{id}` - Obtener crédito específico
-- `POST /api/credits` - Crear crédito
-- `PUT /api/credits/{id}` - Actualizar crédito
-- `DELETE /api/credits/{id}` - Eliminar crédito
+- `GET /api/credits/:id` - Obtener crédito específico
+- `GET /api/credits?userId=:id` - Obtener créditos de un usuario
+- `POST /api/credits` - Crear nuevo crédito
+- `PUT /api/credits/:id` - Actualizar crédito
+- `DELETE /api/credits/:id` - Eliminar crédito
+- `PUT /api/credits/:id/approve` - Aprobar crédito
+- `PUT /api/credits/:id/reject` - Rechazar crédito
+- `POST /api/credits/generate-authorization` - Generar documento de autorización
 
-### Pagos
-- `GET /api/payments` - Obtener todos los pagos
-- `GET /api/payments?userId={id}` - Obtener pagos de usuario
-- `GET /api/payments?creditId={id}` - Obtener pagos de crédito
-- `POST /api/payments` - Registrar pago
-- `PUT /api/payments/{id}` - Actualizar pago
+### Notificaciones
+- `GET /api/notifications` - Obtener notificaciones
+- `GET /api/notifications/unread-count` - Contador de no leídas
+- `PUT /api/notifications/:id/read` - Marcar como leída
 
-## 🚀 Despliegue en Azure
+## 📝 Ejemplos de Uso
 
-1. **Crear Function App en Azure Portal**
-2. **Configurar variables de entorno:**
-   - `DATABASE_URL`: Cadena de conexión a PostgreSQL
-3. **Desplegar código:**
+### Obtener todos los usuarios
 ```bash
-func azure functionapp publish <function-app-name>
+curl http://localhost:3001/api/users
 ```
 
-## 📝 Scripts Disponibles
+### Obtener crédito máximo de un usuario
+```bash
+curl http://localhost:3001/api/users/1/max-credit
+```
 
-- `npm run build` - Compilar TypeScript
-- `npm run dev` - Desarrollo local
-- `npm run db:generate` - Generar cliente Prisma
-- `npm run db:push` - Sincronizar esquema con BD
-- `npm run db:migrate` - Ejecutar migraciones
-- `npm run db:seed` - Poblar BD con datos de prueba
+### Crear nuevo crédito
+```bash
+curl -X POST http://localhost:3001/api/credits \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": 1,
+    "creditType": "Préstamo Personal",
+    "amount": 500000,
+    "installments": 12,
+    "interestRate": 12.5
+  }'
+```
 
+## 🗄️ Base de Datos
+
+### Modelos Principales
+
+#### User
+```typescript
+{
+  id: number
+  firstName: string
+  lastName: string
+  email: string
+  position: string
+  startDate: string
+  salary: number
+  hasDebt: boolean
+  role: Role
+}
+```
+
+#### Credit
+```typescript
+{
+  id: number
+  userId: number
+  creditType: string
+  amount: number
+  installmentAmount: number
+  outstandingAmount: number
+  startDate: string
+  endDate: string
+  status: string
+  interestRate: InterestRate
+  installments: number
+  paidInstallments: number
+}
+```
+
+#### Notification
+```typescript
+{
+  id: number
+  title: string
+  message: string
+  type: string
+  isRead: boolean
+  userId?: number
+  creditId?: number
+  createdAt: Date
+}
+```
+
+## 🔧 Scripts Disponibles
+
+```bash
+# Desarrollo
+npm run dev          # Inicia con nodemon
+npm start            # Inicia servidor
+
+# Base de datos
+npm run db:generate  # Genera cliente Prisma
+npm run db:migrate   # Ejecuta migraciones
+npm run db:seed      # Pobla base de datos
+npm run db:reset     # Resetea base de datos
+
+# Producción
+npm run build        # Compila TypeScript
+npm run start:prod   # Inicia en modo producción
+```
+
+## 🐛 Solución de Problemas
+
+### Error de conexión a base de datos
+- Verificar que SQL Server esté ejecutándose
+- Revisar la URL de conexión en `.env`
+- Verificar que el puerto 1433 esté abierto
+- Ejecutar `npx prisma migrate dev`
+
+### Configuración de SQL Server
+
+#### SQL Server Local
+```bash
+# Instalar SQL Server (Windows)
+# Descargar desde: https://www.microsoft.com/en-us/sql-server/sql-server-downloads
+
+# Habilitar TCP/IP
+# 1. Abrir SQL Server Configuration Manager
+# 2. SQL Server Network Configuration > Protocols for MSSQLSERVER
+# 3. Habilitar TCP/IP
+# 4. Reiniciar SQL Server service
+```
+
+#### SQL Server Express
+```bash
+# La URL de conexión debe incluir la instancia:
+DATABASE_URL="sqlserver://localhost\\SQLEXPRESS:1433;database=helpdesk;user=sa;password=tu_password;encrypt=true;trustServerCertificate=true"
+```
+
+#### Azure SQL Database
+```bash
+# Para Azure SQL, usar esta configuración:
+DATABASE_URL="sqlserver://tu_servidor.database.windows.net:1433;database=helpdesk;user=tu_usuario;password=tu_password;encrypt=true;trustServerCertificate=false"
+```
+
+### Puerto en uso
+- Cambiar el puerto en `.env` o `server.js`
+- Matar proceso que usa el puerto: `lsof -ti:3001 | xargs kill`
+
+### Errores de Prisma
+- Regenerar cliente: `npx prisma generate`
+- Resetear base de datos: `npx prisma migrate reset`
+
+## 📞 Soporte
+
+Para reportar problemas o solicitar funcionalidades, crear un issue en el repositorio.
+
+## 📄 Licencia
+
+Este proyecto está bajo la Licencia MIT.
