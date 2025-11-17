@@ -84,7 +84,7 @@ async function main() {
 
   console.log('✅ Super Administrador creado:', superAdmin.email);
 
-  // Crear superadmin adicional
+  // Crear superadmin adicional - Richard
   const richardAdmin = await prisma.user.upsert({
     where: { email: 'richy9.13@gmail.com' },
     update: {},
@@ -101,16 +101,20 @@ async function main() {
       hasDebt: false,
       contractType: 'indefinido',
       roleId: superAdminRole.id,
-      mustChangePassword: true
+      isActive: true,
+      emailVerified: true,
+      pendingActivation: false,
+      pendingApproval: false
     }
   });
 
   console.log('✅ Super Administrador Richard creado:', richardAdmin.email);
 
-  // Crear usuarios de ejemplo
-  const users = [
-    // Usuario con deuda
-    {
+  // Crear usuario Pedro García con deuda
+  const pedroGarcia = await prisma.user.upsert({
+    where: { email: 'pedro.garcia@sectorial.co' },
+    update: {},
+    create: {
       firstName: 'Pedro',
       lastName: 'García',
       email: 'pedro.garcia@sectorial.co',
@@ -127,89 +131,15 @@ async function main() {
       interestRate: 2.5, // Interés del 2.5%
       contractType: 'indefinido',
       roleId: userRole.id,
-      mustChangePassword: true
-    },
-    // Usuario sin deuda
-    {
-      firstName: 'María',
-      lastName: 'López',
-      email: 'maria.lopez@sectorial.co',
-      password: defaultPassword,
-      documentNumber: '87654321',
-      birthDate: new Date('1988-12-03'),
-      position: 'Diseñadora',
-      startDate: new Date('2022-06-15'),
-      salary: 4200000,
-      hasDebt: false,
-      contractType: 'fijo',
-      roleId: userRole.id,
-      mustChangePassword: true
-    },
-    // Admin con deuda
-    {
-      firstName: 'Carlos',
-      lastName: 'Martínez',
-      email: 'carlos.martinez@sectorial.co',
-      password: defaultPassword,
-      documentNumber: '11223344',
-      birthDate: new Date('1985-08-20'),
-      position: 'Gerente',
-      startDate: new Date('2022-01-15'),
-      salary: 6000000,
-      hasDebt: true,
-      debtAmount: 8000000, // Debe 8 millones
-      paidAmount: 2000000, // Ha pagado 2 millones
-      installmentAmount: 400000, // Cuota de 400 mil
-      interestRate: 3.0, // Interés del 3%
-      contractType: 'indefinido',
-      roleId: adminRole.id,
-      mustChangePassword: true
-    },
-    // Soporte técnico
-    {
-      firstName: 'Luis',
-      lastName: 'Rodríguez',
-      email: 'luis.rodriguez@sectorial.co',
-      password: defaultPassword,
-      documentNumber: '44332211',
-      birthDate: new Date('1975-07-14'),
-      position: 'Soporte Técnico',
-      startDate: new Date('2021-03-01'),
-      salary: 4500000,
-      hasDebt: false,
-      contractType: 'indefinido',
-      roleId: technologyRole.id,
-      mustChangePassword: true
-    },
-    // Usuario con deuda pequeña
-    {
-      firstName: 'Laura',
-      lastName: 'González',
-      email: 'laura.gonzalez@sectorial.co',
-      password: defaultPassword,
-      documentNumber: '22334455',
-      birthDate: new Date('1995-02-20'),
-      position: 'Desarrolladora Jr',
-      startDate: new Date('2024-10-01'),
-      salary: 2800000,
-      hasDebt: true,
-      debtAmount: 2000000, // Debe 2 millones
-      paidAmount: 500000, // Ha pagado 500 mil
-      installmentAmount: 150000, // Cuota de 150 mil
-      interestRate: 2.0, // Interés del 2%
-      contractType: 'practicas',
-      roleId: userRole.id,
+      isActive: true,
+      emailVerified: true,
+      pendingActivation: false,
+      pendingApproval: false,
       mustChangePassword: true
     }
-  ];
+  });
 
-  for (const userData of users) {
-    await prisma.user.upsert({
-      where: { email: userData.email },
-      update: {},
-      create: userData
-    });
-  }
+  console.log('✅ Usuario Pedro García creado:', pedroGarcia.email);
 
   console.log('✅ Usuarios creados');
 
@@ -237,36 +167,21 @@ async function main() {
 
   // Sección de tickets eliminada - no existe en el esquema actual
 
-  // Crear notificaciones
-  const allUsers = await prisma.user.findMany();
-  const notifications = [
-    {
-      userId: allUsers[0]?.id,
-      title: 'Solicitud de crédito pendiente',
-      message: 'Tienes una solicitud de crédito pendiente de aprobación',
-      type: 'warning'
-    },
-    {
-      userId: allUsers[1]?.id,
-      title: 'Crédito aprobado',
-      message: 'Tu solicitud de crédito ha sido aprobada',
-      type: 'success'
-    },
-    {
-      userId: allUsers[4]?.id,
-      title: 'Nuevo ticket asignado',
-      message: 'Se te ha asignado un nuevo ticket de soporte',
-      type: 'info'
-    }
-  ].filter(n => n.userId); // Filtrar notificaciones con userId válido
-
-  for (const notificationData of notifications) {
+  // Crear notificaciones solo para los usuarios existentes
+  try {
     await prisma.notification.create({
-      data: notificationData
+      data: {
+        userId: pedroGarcia.id,
+        title: 'Solicitud de crédito pendiente',
+        message: 'Tienes una solicitud de crédito pendiente de aprobación',
+        type: 'warning'
+      }
     });
+    console.log('✅ Notificaciones creadas');
+  } catch (error) {
+    // Ignorar si ya existe o hay algún error
+    console.log('ℹ️ Notificaciones ya existen o hubo un error al crearlas');
   }
-
-  console.log('✅ Notificaciones creadas');
 
   console.log('🎉 Seed completado exitosamente!');
   console.log('📧 Super Admin: superadmin@sectorial.co');

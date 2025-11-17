@@ -57,9 +57,8 @@ const calculateMaxCreditForUser = (user) => {
     return 0;
   }
 
-  const monthsOfService = user?.startDate ? calculateMonthsBetween(user.startDate, new Date()) : 0;
-  const multiplier = monthsOfService >= 12 ? 2 : 1;
-  return salary * multiplier;
+  // Cualquier persona puede prestar el doble de lo que gana
+  return salary * 2;
 };
 
 // Middleware de autenticación
@@ -150,21 +149,38 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Email y contraseña son requeridos' });
     }
 
+    console.log(`🔍 Intentando login para: ${email}`);
+
     const user = await prisma.user.findUnique({
       where: { email },
       include: { role: true }
     });
 
-    if (!user || !user.isActive) {
+    if (!user) {
+      console.log(`❌ Usuario no encontrado: ${email}`);
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    console.log(`👤 Usuario encontrado: ${user.email}, isActive: ${user.isActive}, pendingApproval: ${user.pendingApproval}, pendingActivation: ${user.pendingActivation}`);
+
+    if (!user.isActive) {
+      console.log(`❌ Usuario inactivo: ${email}`);
+      return res.status(401).json({ error: 'Tu cuenta está inactiva. Contacta al administrador.' });
+    }
+
+    if (!user.password) {
+      console.log(`❌ Usuario sin contraseña: ${email}`);
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
+      console.log(`❌ Contraseña inválida para: ${email}`);
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
     if (user.pendingApproval) {
+      console.log(`❌ Usuario pendiente de aprobación: ${email}`);
       return res.status(403).json({ error: 'Tu cuenta está pendiente de aprobación' });
     }
 
@@ -322,6 +338,58 @@ app.post('/api/users', authenticateToken, authorize(['users.create']), async (re
     res.status(201).json(userWithoutPassword);
   } catch (error) {
     console.error('Error creando usuario:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// Obtener crédito máximo de un usuario
+app.get('/api/users/:id/max-credit', authenticateToken, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    
+    // Solo puede ver su propio crédito máximo, a menos que sea admin
+    if (userId !== req.user.id && !['admin', 'superadmin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'No tienes permisos para ver el crédito máximo de otro usuario' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        credits: {
+          where: {
+            status: {
+              in: ['ACTIVO', 'PENDIENTE_APROBACION']
+            }
+          }
+        }
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    const maxCredit = calculateMaxCreditForUser(user);
+    const existingExposure = user.credits.reduce((total, credit) => {
+      const outstanding = credit.outstandingAmount ?? credit.loanAmount ?? 0;
+      return total + outstanding;
+    }, 0);
+    const availableAmount = Math.max(0, maxCredit - existingExposure);
+
+    const monthsWorked = user.startDate ? calculateMonthsBetween(user.startDate, new Date()) : 0;
+
+    res.json({
+      userId: user.id,
+      userName: `${user.firstName} ${user.lastName}`,
+      salary: user.salary,
+      monthsWorked,
+      maxCredit,
+      existingExposure,
+      availableAmount,
+      hasDebt: user.hasDebt
+    });
+  } catch (error) {
+    console.error('Error obteniendo crédito máximo:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
@@ -779,8 +847,8 @@ app.post('/api/credits', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'El monto del crédito debe ser un número mayor a 0' });
     }
 
-    if (Number.isNaN(numericInstallments) || numericInstallments <= 0) {
-      return res.status(400).json({ error: 'La cantidad de cuotas debe ser un número mayor a 0' });
+    if (Number.isNaN(numericInstallments) || numericInstallments <= 0 || numericInstallments > 36) {
+      return res.status(400).json({ error: 'La cantidad de cuotas debe ser un número entre 1 y 36 meses' });
     }
 
     const targetUserId = userId ? parseInt(userId) : req.user.id;
@@ -816,9 +884,17 @@ app.post('/api/credits', authenticateToken, async (req, res) => {
     }, 0);
 
     const maxCredit = calculateMaxCreditForUser(user);
-    const availableAmount = maxCredit - existingExposure;
+    const availableAmount = Math.max(0, maxCredit - existingExposure);
 
-    if (availableAmount <= 0) {
+    // Consolidación de deudas:
+    // El nuevo crédito tomará TODA la deuda actual y el nuevo solicitado,
+    // pero NO podrá exceder el 2x salario (maxCredit).
+    // El desembolso efectivo será (nuevoCredito - deudaActual), que no puede ser negativo.
+    const consolidatedLoanAmount = Math.min(maxCredit, existingExposure + numericAmount);
+    const disbursedAmount = Math.max(0, consolidatedLoanAmount - existingExposure);
+    const finalLoanAmount = consolidatedLoanAmount; // Monto total del nuevo crédito
+
+    if (finalLoanAmount <= 0) {
       return res.status(400).json({
         error: 'El usuario no tiene cupo disponible para solicitar nuevos créditos',
         maxCredit,
@@ -827,23 +903,14 @@ app.post('/api/credits', authenticateToken, async (req, res) => {
       });
     }
 
-    if (numericAmount > availableAmount) {
-      return res.status(400).json({
-        error: 'El monto solicitado excede el crédito máximo disponible',
-        maxCredit,
-        usedAmount: existingExposure,
-        availableAmount: Number(availableAmount.toFixed(2))
-      });
-    }
-
     // Calcular fechas
     const startDate = new Date();
     const endDate = new Date();
     endDate.setMonth(endDate.getMonth() + numericInstallments);
 
-    // Calcular monto de cuota y monto pendiente
-    const installmentAmount = numericAmount / numericInstallments;
-    const outstandingAmount = numericAmount;
+    // Calcular monto de cuota y monto pendiente con el NUEVO monto consolidado
+    const installmentAmount = finalLoanAmount / numericInstallments;
+    const outstandingAmount = finalLoanAmount;
 
     // Obtener tasa de interés por defecto si no se especifica
     let finalInterestRateId = interestRateId;
@@ -854,10 +921,12 @@ app.post('/api/credits', authenticateToken, async (req, res) => {
       finalInterestRateId = defaultRate ? defaultRate.id : 1;
     }
 
+    // Crear el nuevo crédito consolidado (NO cerrar aún los anteriores).
+    // El cierre de créditos previos ocurrirá en la aprobación del nuevo crédito.
     const credit = await prisma.credit.create({
       data: {
         userId: targetUserId,
-        loanAmount: numericAmount,
+        loanAmount: finalLoanAmount,
         installments: numericInstallments,
         installmentAmount: installmentAmount,
         outstandingAmount: outstandingAmount,
@@ -878,7 +947,8 @@ app.post('/api/credits', authenticateToken, async (req, res) => {
       where: { id: targetUserId },
       data: {
         hasDebt: true,
-        debtAmount: existingExposure + numericAmount
+        // Mientras se aprueba, la deuda total es la suma de deudas actuales + nuevo crédito
+        debtAmount: existingExposure + outstandingAmount
       }
     });
 
@@ -893,7 +963,13 @@ app.post('/api/credits', authenticateToken, async (req, res) => {
       req
     );
 
-    res.status(201).json(credit);
+    res.status(201).json({
+      ...credit,
+      disbursedAmount: Number(disbursedAmount.toFixed(2)),
+      consolidatedPreviousDebt: existingExposure,
+      maxCredit,
+      availableAmountBefore: availableAmount
+    });
   } catch (error) {
     console.error('Error creando crédito:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
@@ -1006,37 +1082,50 @@ app.put('/api/credits/:id/approve', authenticateToken, async (req, res) => {
       return total + outstanding;
     }, 0);
 
-    const maxCredit = calculateMaxCreditForUser(credit.user);
-    const availableAmount = maxCredit - existingExposure;
     const creditExposure = credit.outstandingAmount ?? credit.loanAmount ?? 0;
-
-    if (availableAmount <= 0 || creditExposure > availableAmount) {
-      return res.status(400).json({
-        error: 'El crédito excede el cupo máximo permitido para el usuario',
-        maxCredit,
-        usedAmount: existingExposure,
-        availableAmount: Math.max(Number(availableAmount.toFixed(2)), 0)
+    // Al aprobar: cerrar créditos anteriores y activar el nuevo en una transacción atómica
+    const updatedCredit = await prisma.$transaction(async (tx) => {
+      // Cerrar otros créditos (ACTIVO/PENDIENTE_APROBACION) y marcar todas sus cuotas como pagadas
+      if (otherCredits.length > 0) {
+        await Promise.all(
+          otherCredits.map(async (c) => {
+            await tx.credit.update({
+              where: { id: c.id },
+              data: {
+                status: 'PAGADO',
+                outstandingAmount: 0,
+                // Marcar todas las cuotas como pagadas en el contador
+                paidInstallments: c.installments
+              }
+            });
+            // Opcional: marcar todos los registros de pago pendientes como pagados (si existieran)
+            await tx.paymentHistory.updateMany({
+              where: { creditId: c.id, status: { not: 'PAGADO' } },
+              data: { status: 'PAGADO' }
+            });
+          })
+        );
+      }
+      // Activar el crédito aprobado
+      const activated = await tx.credit.update({
+        where: { id: creditId },
+        data: { status: 'ACTIVO' },
+        include: {
+          user: {
+            select: { id: true, firstName: true, lastName: true, email: true }
+          },
+          interestRate: true
+        }
       });
-    }
-
-    const updatedCredit = await prisma.credit.update({
-      where: { id: creditId },
-      data: { status: 'ACTIVO' },
-      include: {
-        user: {
-          select: { id: true, firstName: true, lastName: true, email: true }
-        },
-        interestRate: true
-      }
-    });
-
-    const totalOutstanding = existingExposure + creditExposure;
-    await prisma.user.update({
-      where: { id: credit.userId },
-      data: {
-        hasDebt: totalOutstanding > 0,
-        debtAmount: totalOutstanding
-      }
+      // Actualizar deuda del usuario = solo el nuevo crédito
+      await tx.user.update({
+        where: { id: credit.userId },
+        data: {
+          hasDebt: creditExposure > 0,
+          debtAmount: creditExposure
+        }
+      });
+      return activated;
     });
 
     // Crear log de auditoría
@@ -1152,7 +1241,7 @@ app.post('/api/credits/:id/pay', authenticateToken, async (req, res) => {
       }
     });
 
-    const monthlyRate = 0.01;
+    const monthlyRate = 0.013; // 1.3% mensual
     let outstanding = Number(credit.outstandingAmount);
 
     const paymentsToCreate = uniqueInstallments.map(installmentNumber => {

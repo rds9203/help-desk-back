@@ -1,0 +1,14 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "DATABASE_URL": "mysql://root:1234@localhost:3306/help-desk",
+    "JWT_SECRET": "helpdesk_secret_key_2024",
+    "CORS_ORIGIN": "http://localhost:4200"
+  }
+}
+
+
+
+

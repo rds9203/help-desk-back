@@ -113,7 +113,7 @@ async function createPayment(context: Context, req: HttpRequest): Promise<void> 
     return;
   }
   
-  const monthlyRate = 0.01;
+  const monthlyRate = 0.013; // 1.3% mensual
   const outstanding = Number(credit.outstandingAmount);
   const interestAmount = +(outstanding * monthlyRate).toFixed(2);
   let principalAmount = credit.installmentAmount - interestAmount;
