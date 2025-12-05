@@ -1,16 +1,10 @@
-import { AzureFunction, Context, HttpRequest } from '@azure/functions';
-
-export interface HttpResponse {
-  status: number;
-  headers?: { [key: string]: string };
-  body: any;
-}
+import { HttpRequest, HttpResponseInit } from '@azure/functions';
 
 export const createResponse = (
   status: number,
   body: any,
   headers?: { [key: string]: string }
-): HttpResponse => ({
+): HttpResponseInit => ({
   status,
   headers: {
     'Content-Type': 'application/json',
@@ -19,12 +13,20 @@ export const createResponse = (
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     ...headers
   },
-  body
+  jsonBody: body
 });
 
-export const handleCors = (req: HttpRequest): HttpResponse | null => {
+export const handleCors = (req: HttpRequest): HttpResponseInit | null => {
   if (req.method === 'OPTIONS') {
-    return createResponse(200, {});
+    return {
+      status: 200,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+      },
+      jsonBody: {}
+    };
   }
   return null;
 };
@@ -64,4 +66,3 @@ export const calculateEndDate = (startDate: Date, totalMonths: number): Date => 
   endDate.setMonth(endDate.getMonth() + totalMonths);
   return endDate;
 };
-
